@@ -1,9 +1,30 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Barber, Appointment, PageRoute } from '../types';
+import { generateSpeech } from '../services/geminiService';
 
 interface Props {
   onNavigate: (route: PageRoute) => void;
+}
+
+// Audio Helper: Convert PCM Int16 to AudioBuffer
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number = 24000,
+  numChannels: number = 1,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
 }
 
 export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
@@ -16,6 +37,11 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
       totalWaiting: 0,
       avgWaitTime: 0
   });
+  
+  // Audio State
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const getTodayString = () => {
     const d = new Date();
@@ -45,14 +71,14 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
           if (apptData) {
               const activeAppts = apptData.filter((a: any) => a.status !== 'completed' && a.status !== 'cancelled');
               const completed = apptData.filter((a: any) => a.status === 'completed');
-              const waiting = activeAppts.filter((a: any) => a.status !== 'completed'); // Simplified logic
+              const waiting = activeAppts.filter((a: any) => a.status !== 'completed');
               
               setAppointments(activeAppts as Appointment[]);
               
               setStats({
                   servedToday: completed.length,
                   totalWaiting: waiting.length,
-                  avgWaitTime: waiting.length * 15 // Mock calculation
+                  avgWaitTime: waiting.length * 15
               });
           }
       } catch (e) {
@@ -60,22 +86,112 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
       }
   };
 
+  // Toggle Audio
+  const toggleAudio = async () => {
+      if (!audioEnabled) {
+          try {
+            // Initialize Audio Context on user gesture
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
+            }
+            if (audioContextRef.current.state === 'suspended') {
+                await audioContextRef.current.resume();
+            }
+            // Play a silent sound to unlock audio on iOS/Android
+            const buffer = audioContextRef.current.createBuffer(1, 1, 22050);
+            const source = audioContextRef.current.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContextRef.current.destination);
+            source.start(0);
+
+            setAudioEnabled(true);
+            console.log("Audio System Enabled");
+          } catch (e) {
+            console.error("Failed to enable audio", e);
+            // Even if Context fails, we enable state to allow Native TTS fallback
+            setAudioEnabled(true);
+          }
+      } else {
+          setAudioEnabled(false);
+          // Cancel any ongoing native speech
+          window.speechSynthesis.cancel();
+      }
+  };
+
+  // Browser Native TTS Fallback
+  const playNativeTTS = (text: string) => {
+      if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel(); // Cancel previous
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = 'zh-CN'; // Set Chinese
+          utterance.rate = 1.0;
+          utterance.pitch = 1.0;
+          
+          utterance.onstart = () => setIsPlaying(true);
+          utterance.onend = () => setIsPlaying(false);
+          utterance.onerror = () => setIsPlaying(false);
+          
+          window.speechSynthesis.speak(utterance);
+      } else {
+          console.error("Browser does not support Speech Synthesis");
+          setIsPlaying(false);
+      }
+  };
+
+  // Play Announcement (Try AI first, then Native)
+  const playAnnouncement = async (text: string) => {
+      if (!audioEnabled) return;
+      
+      setIsPlaying(true);
+
+      // 1. Try Gemini AI TTS
+      try {
+          // Check if Context is healthy
+          if (audioContextRef.current && audioContextRef.current.state === 'running') {
+            const pcmData = await generateSpeech(text);
+            if (pcmData) {
+                const audioBuffer = await decodeAudioData(pcmData, audioContextRef.current, 24000);
+                const source = audioContextRef.current.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContextRef.current.destination);
+                source.onended = () => setIsPlaying(false);
+                source.start();
+                return; // Success, exit
+            }
+          }
+      } catch (e) {
+          console.warn("Gemini TTS failed, falling back to Native TTS", e);
+      }
+
+      // 2. Fallback to Native TTS (No Key or Network Error)
+      console.log("Using Native TTS Fallback");
+      playNativeTTS(text);
+  };
+
   useEffect(() => {
     fetchMonitorData();
 
-    // Clock
+    // Clock (every 1s)
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
 
-    // Realtime
+    // Polling Backup (every 5s) to ensure data freshness
+    const pollingTimer = setInterval(() => fetchMonitorData(), 5000);
+
+    // Realtime Subscription
     const channel = supabase.channel('web_monitor_realtime')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'app_appointments' }, (payload) => {
             fetchMonitorData();
             // Add to log feed
             const newRecord = payload.new as Appointment;
+            const oldRecord = payload.old as Appointment;
+
             if (payload.eventType === 'INSERT') {
                 addLog(`新预约: ${newRecord.customer_name} 预约了 ${newRecord.service_name}`);
-            } else if (payload.eventType === 'UPDATE' && newRecord.status === 'checked_in') {
+            } else if (payload.eventType === 'UPDATE' && newRecord.status === 'checked_in' && oldRecord.status !== 'checked_in') {
+                // Trigger TTS for Check-in / Call
                 addLog(`顾客到店: ${newRecord.customer_name} 已签到`);
+                const msg = `请 ${newRecord.id} 号顾客，${newRecord.customer_name}，到 ${newRecord.barber_name} 总监处准备理发。`;
+                playAnnouncement(msg);
             } else if (payload.eventType === 'UPDATE' && newRecord.status === 'completed') {
                 addLog(`服务完成: ${newRecord.customer_name} 的服务已结束`);
             }
@@ -84,9 +200,14 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
 
     return () => {
         clearInterval(timer);
+        clearInterval(pollingTimer);
         supabase.removeChannel(channel);
+        window.speechSynthesis.cancel();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+            audioContextRef.current.close();
+        }
     };
-  }, []);
+  }, [audioEnabled]);
 
   const addLog = (msg: string) => {
       const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -111,14 +232,28 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
                 </div>
             </div>
             
-            <div className="flex items-center gap-12">
-                <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-amber-400 text-3xl">sunny</span>
-                    <div>
-                        <p className="text-lg font-bold">24°C</p>
-                        <p className="text-xs text-slate-400">晴朗舒适</p>
-                    </div>
-                </div>
+            <div className="flex items-center gap-8">
+                {/* Audio Toggle */}
+                <button 
+                    onClick={toggleAudio}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${audioEnabled 
+                        ? 'bg-primary/20 border-primary text-primary' 
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                >
+                    {isPlaying ? (
+                        <div className="flex gap-1 items-center h-4">
+                            <span className="w-1 h-2 bg-primary animate-[bounce_0.5s_infinite]"></span>
+                            <span className="w-1 h-4 bg-primary animate-[bounce_0.5s_infinite_0.1s]"></span>
+                            <span className="w-1 h-2 bg-primary animate-[bounce_0.5s_infinite_0.2s]"></span>
+                        </div>
+                    ) : (
+                        <span className="material-symbols-outlined text-lg">{audioEnabled ? 'volume_up' : 'volume_off'}</span>
+                    )}
+                    <span className="text-xs font-bold">{audioEnabled ? '语音播报已开启' : '开启语音叫号'}</span>
+                </button>
+
+                <div className="h-8 w-px bg-slate-800"></div>
+
                 <div className="text-right">
                     <p className="text-3xl font-mono font-bold leading-none">{currentTime.toLocaleTimeString([], { hour12: false })}</p>
                     <p className="text-xs text-slate-400 font-medium mt-1">{currentTime.toLocaleDateString()} {['周日','周一','周二','周三','周四','周五','周六'][currentTime.getDay()]}</p>

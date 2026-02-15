@@ -181,12 +181,8 @@ if (!client) {
       }
 
       if (op === 'update') {
-        // Update items in the main store using indices
-        // Warning: This simple index mapping breaks if sort/filter logic gets complex or concurrent, 
-        // but works for simple linear execution.
         const updatedRows: any[] = [];
         mockDb[this.table] = rows.map((row) => {
-           // Check if this row matches filters
            const match = this.filters.every(f => {
               if (f.op === 'eq') return row[f.col] == f.val;
               if (f.op === 'in') return Array.isArray(f.val) && f.val.includes(row[f.col]);
@@ -230,6 +226,11 @@ if (!client) {
     from: (table: string) => new MockQueryBuilder(table),
     channel: (name: string) => mockChannel,
     removeChannel: () => {},
+    rpc: async (fnName: string, params: any) => {
+        console.log(`[Mock RPC] Calling ${fnName} with params:`, params);
+        await new Promise(r => setTimeout(r, 500));
+        return { data: null, error: null }; // Simulate successful void return
+    }
   } as any;
 }
 

@@ -14,7 +14,6 @@ import { Register } from './pages/Register';
 import { Login } from './pages/Login';
 import { PageRoute, Barber, Appointment, User } from './types';
 import { supabase } from './services/supabase';
-import { checkAndCancelExpiredAppointments } from './services/scheduler';
 
 const App: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<PageRoute>('launcher');
@@ -38,19 +37,6 @@ const App: React.FC = () => {
        }
     }
     loadBarbers();
-  }, []);
-
-  // System Scheduler
-  useEffect(() => {
-     // Run scheduler on mount
-     const runScheduler = async () => {
-         await checkAndCancelExpiredAppointments();
-     };
-     runScheduler();
-     
-     // Run every minute
-     const interval = setInterval(runScheduler, 60 * 1000);
-     return () => clearInterval(interval);
   }, []);
 
   const handleNavigate = (route: PageRoute) => {

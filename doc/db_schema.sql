@@ -176,3 +176,74 @@ CREATE POLICY "Allow all operations for app_logs" ON app_logs FOR ALL USING (tru
 CREATE POLICY "Allow all operations for app_settings" ON app_settings FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations for app_services" ON app_services FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all operations for app_ratings" ON app_ratings FOR ALL USING (true) WITH CHECK (true);
+
+-- 11. [后端云端化] 预约自动清理函数 (Cloud Function)
+CREATE OR REPLACE FUNCTION cancel_expired_appointments()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    appt RECORD;
+    current_year INT := EXTRACT(YEAR FROM (now() AT TIME ZONE 'Asia/Shanghai'))::INT;
+    appt_ts TIMESTAMP;
+    now_ts TIMESTAMP := (now() AT TIME ZONE 'Asia/Shanghai');
+BEGIN
+    FOR appt IN
+        SELECT id, date_str, time_str, customer_name
+        FROM app_appointments
+        WHERE status IN ('pending', 'confirmed')
+    LOOP
+        BEGIN
+            -- 解析存储为字符串的日期 (例如: "10月24日", "14:00")
+            -- 假设为当前年份
+            appt_ts := make_timestamp(
+                current_year,
+                (substring(appt.date_str from '(\d+)月'))::INT,
+                (substring(appt.date_str from '(\d+)日'))::INT,
+                (split_part(appt.time_str, ':', 1))::INT,
+                (split_part(appt.time_str, ':', 2))::INT,
+                0.0
+            );
+
+            -- 检查是否过期 (超时 15 分钟)
+            IF now_ts > (appt_ts + interval '15 minutes') THEN
+                UPDATE app_appointments
+                SET status = 'cancelled'
+                WHERE id = appt.id;
+
+                INSERT INTO app_logs ("user", role, action, details, type, created_at)
+                VALUES (
+                    'System (Cloud)',
+                    'system',
+                    '自动取消违约',
+                    format('自动取消超时预约 #%s (顾客: %s)', appt.id, appt.customer_name),
+                    'warning',
+                    now()
+                );
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            -- 忽略解析错误的旧数据
+            RAISE NOTICE 'Error processing appointment %: %', appt.id, SQLERRM;
+        END;
+    END LOOP;
+END;
+$$;
+
+-- 12. [后端云端化] 尝试启用 pg_cron 定时任务 (需要数据库扩展支持)
+-- 注意: 在 Supabase Dashboard -> Database -> Extensions 中需启用 pg_cron
+DO $$
+BEGIN
+    -- 尝试创建扩展 (如果不允许会报错，忽略即可)
+    BEGIN
+        CREATE EXTENSION IF NOT EXISTS pg_cron;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'pg_cron extension not available or permission denied.';
+    END;
+
+    -- 如果扩展存在，配置定时任务 (每分钟运行一次)
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+        PERFORM cron.schedule('auto_cancel_expired', '* * * * *', 'SELECT cancel_expired_appointments()');
+    END IF;
+END $$;

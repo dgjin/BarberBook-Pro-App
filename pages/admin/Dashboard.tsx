@@ -1,63 +1,190 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Layout } from '../../components/Layout';
 import { BottomNav } from '../../components/BottomNav';
-import { PageRoute, Barber } from '../../types';
+import { PageRoute, Barber, Appointment } from '../../types';
 import { supabase } from '../../services/supabase';
 
 interface Props {
   onNavigate: (route: PageRoute) => void;
 }
 
+interface DayStatus {
+    dayName: string; // "周一"
+    dateNum: string; // "23"
+    fullDateStr: string; // "10月23日" matches DB format
+    count: number;
+    status: 'free' | 'busy' | 'full';
+}
+
+interface TimeSlot {
+    time: string;
+    appointment?: Appointment;
+    status: 'available' | 'booked';
+}
+
 export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
   const [selectedBarberName, setSelectedBarberName] = useState<string>('');
   const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number>(0);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Fetch Barbers & Subscribe to Realtime Updates
+  // System Config State
+  const [config, setConfig] = useState({
+      openTime: "09:00",
+      closeTime: "21:00",
+      serviceDuration: 45, // minutes
+      maxAppointments: 24
+  });
+
+  // Helper: Format Date to "M月D日"
+  const formatDateToDB = (date: Date) => {
+      return `${date.getMonth() + 1}月${date.getDate()}日`;
+  };
+
+  // Helper: Get Day Name
+  const getDayName = (date: Date) => {
+      const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+      return days[date.getDay()];
+  };
+
+  // 1. Fetch System Settings & Barbers
   useEffect(() => {
-    const fetchBarbers = async () => {
-        const { data } = await supabase.from('app_barbers').select('*').order('id');
-        if (data && data.length > 0) {
-            setBarbers(data as unknown as Barber[]);
-            // If no barber selected, select first one
-            setSelectedBarberName(prev => {
-                const exists = data.find((b: any) => b.name === prev);
-                return exists ? prev : data[0].name;
-            });
+    const initData = async () => {
+        setLoading(true);
+        try {
+            // Fetch Config
+            const { data: settingsData } = await supabase
+                .from('app_settings')
+                .select('value')
+                .eq('key', 'global_config')
+                .single();
+            
+            if (settingsData?.value) {
+                setConfig(prev => ({ ...prev, ...settingsData.value }));
+            }
+
+            // Fetch Barbers
+            const { data: barberData } = await supabase.from('app_barbers').select('*').order('id');
+            if (barberData && barberData.length > 0) {
+                setBarbers(barberData as unknown as Barber[]);
+                if (!selectedBarberName) {
+                    setSelectedBarberName(barberData[0].name);
+                }
+            }
+        } catch (e) {
+            console.error("Init Error", e);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
-    fetchBarbers();
-
-    const channel = supabase.channel('dashboard_barber_updates')
-        .on(
-            'postgres_changes', 
-            { event: '*', schema: 'public', table: 'app_barbers' }, 
-            (payload) => {
-                fetchBarbers(); 
-            }
-        )
-        .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    initData();
   }, []);
 
-  // Mock Days Data (Static for now, but could be dynamic later)
-  const days = [
-    { d: '周一', date: '23', n: 23, s: 'busy' },
-    { d: '周二', date: '24', n: 24, s: 'free' },
-    { d: '周三', date: '25', n: 25, s: 'full' },
-    { d: '周四', date: '26', n: 26, s: 'free' },
-    { d: '周五', date: '27', n: 27, s: 'busy' },
-    { d: '周六', date: '28', n: 28, s: 'full' },
-    { d: '周日', date: '29', n: 29, s: 'free' }
-  ];
+  // 2. Fetch Appointments when Barber changes
+  useEffect(() => {
+      if (!selectedBarberName) return;
 
-  const currentDay = days[selectedDayIndex];
+      const fetchAppointments = async () => {
+          // Fetch appointments for the selected barber (simple fetch all active for simplicity in this demo scope)
+          // In prod, you would filter by date range >= today
+          const { data } = await supabase
+              .from('app_appointments')
+              .select('*')
+              .eq('barber_name', selectedBarberName)
+              .neq('status', 'cancelled');
+          
+          if (data) {
+              setAppointments(data as Appointment[]);
+          }
+      };
+
+      fetchAppointments();
+
+      const channel = supabase.channel('dashboard_appt_updates')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'app_appointments' }, () => {
+            fetchAppointments(); 
+        })
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+  }, [selectedBarberName]);
+
+  // 3. Compute 7-Day View Data
+  const weekData = useMemo(() => {
+      const days: DayStatus[] = [];
+      const today = new Date();
+      
+      // Calculate total possible slots per day
+      const [openH, openM] = config.openTime.split(':').map(Number);
+      const [closeH, closeM] = config.closeTime.split(':').map(Number);
+      const totalMinutes = (closeH * 60 + closeM) - (openH * 60 + openM);
+      const totalSlots = Math.floor(totalMinutes / config.serviceDuration);
+
+      for (let i = 0; i < 7; i++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() + i);
+          
+          const dbDateStr = formatDateToDB(d);
+          const dayName = i === 0 ? '今天' : getDayName(d);
+          
+          // Count appointments for this day
+          const dailyAppts = appointments.filter(a => a.date_str === dbDateStr);
+          const count = dailyAppts.length;
+          
+          let status: 'free' | 'busy' | 'full' = 'free';
+          const ratio = count / totalSlots;
+          
+          if (ratio >= 0.8) status = 'full';
+          else if (ratio >= 0.5) status = 'busy';
+          
+          days.push({
+              dayName,
+              dateNum: d.getDate().toString(),
+              fullDateStr: dbDateStr,
+              count,
+              status
+          });
+      }
+      return days;
+  }, [appointments, config]);
+
+  // 4. Compute Daily Schedule Slots
+  const currentDaySchedule = useMemo(() => {
+      const selectedDateStr = weekData[selectedDayIndex]?.fullDateStr;
+      const slots: TimeSlot[] = [];
+      
+      if (!selectedDateStr) return [];
+
+      let current = new Date(`2000-01-01T${config.openTime}:00`);
+      const end = new Date(`2000-01-01T${config.closeTime}:00`);
+      
+      const dailyAppts = appointments.filter(a => a.date_str === selectedDateStr);
+
+      while (current < end) {
+          const timeStr = current.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+          
+          // Find if there is an appointment at this time
+          // Note: This matches exact start time string. Robust systems use time ranges.
+          const appt = dailyAppts.find(a => a.time_str === timeStr);
+          
+          slots.push({
+              time: timeStr,
+              appointment: appt,
+              status: appt ? 'booked' : 'available'
+          });
+
+          // Increment
+          current.setMinutes(current.getMinutes() + config.serviceDuration);
+      }
+      
+      return slots;
+  }, [weekData, selectedDayIndex, appointments, config]);
+
   const currentBarberObj = barbers.find(b => b.name === selectedBarberName) || barbers[0];
+  const currentDayInfo = weekData[selectedDayIndex];
 
   return (
     <Layout>
@@ -84,7 +211,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </span>
           </div>
           
-          {loading ? (
+          {loading && barbers.length === 0 ? (
              <div className="px-6 text-xs text-slate-400">加载理发师数据...</div>
           ) : (
             <div className="flex gap-5 overflow-x-auto px-6 pb-2 hide-scrollbar">
@@ -128,7 +255,7 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
             </div>
           </div>
           <div className="grid grid-cols-7 gap-2">
-            {days.map((day, i) => {
+            {weekData.map((day, i) => {
               const isSelected = selectedDayIndex === i;
               return (
                 <button 
@@ -140,9 +267,9 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                       : 'bg-white border border-gray-100 shadow-sm hover:bg-gray-50'
                     }`}
                 >
-                  <span className={`text-[10px] font-medium mb-1 ${isSelected ? 'text-primary' : 'text-slate-400'}`}>{day.d}</span>
-                  <span className={`text-sm font-bold mb-3 ${isSelected ? 'text-slate-900' : 'text-slate-500'}`}>{day.n}</span>
-                  <div className={`w-1.5 h-1.5 rounded-full ${day.s === 'free' ? 'bg-status-ready' : day.s === 'busy' ? 'bg-amber-400' : 'bg-status-busy'}`}></div>
+                  <span className={`text-[10px] font-medium mb-1 ${isSelected ? 'text-primary' : 'text-slate-400'}`}>{day.dayName}</span>
+                  <span className={`text-sm font-bold mb-3 ${isSelected ? 'text-slate-900' : 'text-slate-500'}`}>{day.dateNum}</span>
+                  <div className={`w-1.5 h-1.5 rounded-full ${day.status === 'free' ? 'bg-status-ready' : day.status === 'busy' ? 'bg-amber-400' : 'bg-status-busy'}`}></div>
                 </button>
               );
             })}
@@ -152,56 +279,58 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
         {/* Today's List */}
         <section className="px-6">
           <div className="bg-white rounded-[24px] p-6 shadow-sm border border-gray-50 transition-all duration-500">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h4 className="font-bold text-slate-900 text-lg">10月{currentDay.date}日 ({currentDay.d})</h4>
-                <p className="text-sm text-slate-400">
-                  {selectedBarberName} • 已预约 {currentDay.s === 'full' ? '15' : currentDay.s === 'busy' ? '12' : '6'} / 15 时段
-                </p>
-              </div>
-              <div className={`px-3 py-1 border rounded-full text-[11px] font-bold
-                ${currentDay.s === 'free' ? 'bg-green-50 text-status-ready border-green-100' : 
-                  currentDay.s === 'busy' ? 'bg-amber-50 text-amber-500 border-amber-100' : 
-                  'bg-red-50 text-status-busy border-red-100'}
-              `}>
-                状态：{currentDay.s === 'free' ? '空闲' : currentDay.s === 'busy' ? '繁忙' : '已满'}
-              </div>
-            </div>
+            {currentDayInfo && (
+                <div className="flex justify-between items-start mb-6">
+                <div>
+                    <h4 className="font-bold text-slate-900 text-lg">{currentDayInfo.fullDateStr} ({currentDayInfo.dayName})</h4>
+                    <p className="text-sm text-slate-400">
+                    {selectedBarberName} • 已预约 {currentDayInfo.count} 单
+                    </p>
+                </div>
+                <div className={`px-3 py-1 border rounded-full text-[11px] font-bold
+                    ${currentDayInfo.status === 'free' ? 'bg-green-50 text-status-ready border-green-100' : 
+                    currentDayInfo.status === 'busy' ? 'bg-amber-50 text-amber-500 border-amber-100' : 
+                    'bg-red-50 text-status-busy border-red-100'}
+                `}>
+                    状态：{currentDayInfo.status === 'free' ? '空闲' : currentDayInfo.status === 'busy' ? '繁忙' : '已满'}
+                </div>
+                </div>
+            )}
             
             <div className="space-y-4">
-              {currentDay.s !== 'full' && (
-                <div className="flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed border-primary/20 bg-green-50/50">
-                  <span className="text-xs font-semibold text-primary w-12">10:30</span>
-                  <div className="h-8 w-1 bg-status-ready rounded-full"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-primary">可预约</p>
-                    <p className="text-[10px] text-primary/60">当前时段空闲</p>
-                  </div>
-                  <button className="bg-primary text-white px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors">预留</button>
-                </div>
+              {currentDaySchedule.length > 0 ? (
+                  currentDaySchedule.map((slot, idx) => (
+                    <div key={idx}>
+                        {slot.status === 'available' ? (
+                            <div className="flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed border-primary/20 bg-blue-50/20 hover:bg-blue-50 transition-colors group">
+                                <span className="text-xs font-semibold text-primary w-12">{slot.time}</span>
+                                <div className="h-8 w-1 bg-status-ready rounded-full"></div>
+                                <div className="flex-1">
+                                    <p className="text-sm font-bold text-primary group-hover:text-blue-700 transition-colors">可预约</p>
+                                    <p className="text-[10px] text-primary/60">当前时段空闲</p>
+                                </div>
+                                <button className="bg-primary text-white px-4 py-1.5 rounded-xl text-xs font-bold hover:bg-blue-600 transition-colors shadow-sm">预留</button>
+                            </div>
+                        ) : (
+                            <div className={`flex items-center gap-4 p-4 rounded-2xl border ${slot.appointment?.status === 'checked_in' ? 'bg-green-50/50 border-green-100' : 'bg-gray-50/50 border-gray-100'}`}>
+                                <span className="text-xs font-semibold text-slate-400 w-12">{slot.time}</span>
+                                <div className={`h-8 w-1 rounded-full ${slot.appointment?.status === 'checked_in' ? 'bg-status-ready' : 'bg-status-busy'}`}></div>
+                                <div className="flex-1">
+                                    <p className="text-sm font-bold text-slate-900">{slot.appointment?.customer_name}</p>
+                                    <p className="text-[10px] text-slate-400">{slot.appointment?.service_name} • {config.serviceDuration}分钟</p>
+                                </div>
+                                {slot.appointment?.status === 'checked_in' ? (
+                                    <span className="material-symbols-outlined text-green-500 text-xl" title="已签到">check_circle</span>
+                                ) : (
+                                    <span className="material-symbols-outlined text-slate-300 text-xl">lock</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                  ))
+              ) : (
+                  <div className="text-center py-8 text-slate-400 text-xs">暂无排班数据</div>
               )}
-              
-              <div className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
-                <span className="text-xs font-semibold text-slate-400 w-12">09:00</span>
-                <div className="h-8 w-1 bg-status-busy rounded-full"></div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-slate-900">王先生 - 尊享理发</p>
-                  <p className="text-[10px] text-slate-400">耗时 45 分钟</p>
-                </div>
-                <span className="material-symbols-outlined text-slate-300 text-xl">lock</span>
-              </div>
-
-               {currentDay.s !== 'free' && (
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50/50 border border-gray-100">
-                  <span className="text-xs font-semibold text-slate-400 w-12">14:00</span>
-                  <div className="h-8 w-1 bg-status-busy rounded-full"></div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-slate-900">李女士 - 染烫护理</p>
-                    <p className="text-[10px] text-slate-400">耗时 120 分钟</p>
-                  </div>
-                  <span className="material-symbols-outlined text-slate-300 text-xl">lock</span>
-                </div>
-               )}
             </div>
           </div>
         </section>
@@ -227,8 +356,8 @@ export const Dashboard: React.FC<Props> = ({ onNavigate }) => {
                     
                     <div className="grid grid-cols-2 gap-4 w-full mb-6">
                         <div className="bg-slate-50 p-3 rounded-2xl text-center border border-slate-100">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">今日预约</p>
-                            <p className="text-xl font-bold text-slate-900">8</p>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">历史服务</p>
+                            <p className="text-xl font-bold text-slate-900">{currentBarberObj.service_count || 0}</p>
                         </div>
                         <div className="bg-slate-50 p-3 rounded-2xl text-center border border-slate-100">
                             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">综合评分</p>

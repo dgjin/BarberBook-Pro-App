@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 // Safely access process.env
 const getProcessEnv = (key: string) => {
@@ -12,6 +12,17 @@ const getProcessEnv = (key: string) => {
 const apiKey = getProcessEnv('API_KEY') || '';
 // Initialize AI only if key is present to avoid errors on load if key is missing
 const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+// Helper: Base64 decode
+function decodeBase64(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export const generateHairConsultation = async (
   query: string, 
@@ -40,5 +51,36 @@ export const generateHairConsultation = async (
   } catch (error) {
     console.error("Gemini API Error:", error);
     return "网络连接似乎有点问题，请稍后再试。";
+  }
+};
+
+export const generateSpeech = async (text: string): Promise<Uint8Array | null> => {
+  if (!apiKey || !ai) {
+    console.warn("No API Key provided for TTS.");
+    return null;
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-preview-tts",
+      contents: [{ parts: [{ text: text }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Options: 'Kore', 'Fenrir', 'Puck', 'Charon'
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+        return decodeBase64(base64Audio);
+    }
+    return null;
+  } catch (error) {
+    console.error("Gemini TTS Error:", error);
+    return null;
   }
 };

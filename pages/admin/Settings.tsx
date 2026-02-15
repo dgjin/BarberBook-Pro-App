@@ -3,6 +3,7 @@ import { Layout } from '../../components/Layout';
 import { BottomNav } from '../../components/BottomNav';
 import { PageRoute, ServiceItem } from '../../types';
 import { supabase } from '../../services/supabase';
+import { checkAndCancelExpiredAppointments } from '../../services/scheduler';
 
 interface Props {
   onNavigate: (route: PageRoute) => void;
@@ -24,6 +25,7 @@ export const Settings: React.FC<Props> = ({ onNavigate }) => {
   const [autoBackup, setAutoBackup] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isTriggeringScheduler, setIsTriggeringScheduler] = useState(false);
   
   // System Config Loading/Saving
   const [isLoadingSettings, setIsLoadingSettings] = useState(false);
@@ -105,6 +107,13 @@ export const Settings: React.FC<Props> = ({ onNavigate }) => {
   const handleSync = () => {
       setIsSyncing(true);
       setTimeout(() => setIsSyncing(false), 2000);
+  };
+
+  const handleManualScheduler = async () => {
+      setIsTriggeringScheduler(true);
+      await checkAndCancelExpiredAppointments();
+      setIsTriggeringScheduler(false);
+      alert('超时检查指令已发送至云端。');
   };
 
   const safeShowPicker = (e: React.MouseEvent<HTMLInputElement>) => {
@@ -515,6 +524,15 @@ export const Settings: React.FC<Props> = ({ onNavigate }) => {
         >
           <span className="material-symbols-outlined">history</span>
           查看审计日志
+        </button>
+
+        <button 
+           onClick={handleManualScheduler}
+           disabled={isTriggeringScheduler}
+           className="w-full bg-slate-50 border border-slate-200 text-slate-500 font-medium py-3 rounded-2xl shadow-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+        >
+          <span className={`material-symbols-outlined ${isTriggeringScheduler ? 'animate-spin' : ''}`}>schedule</span>
+          {isTriggeringScheduler ? '正在请求云端...' : '手动触发超时检查 (Cloud RPC)'}
         </button>
       </main>
 
