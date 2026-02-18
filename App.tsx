@@ -1,20 +1,20 @@
 
 import React, { useState, useEffect } from 'react';
-import { CustomerHome } from './pages/CustomerHome';
-import { Booking } from './pages/Booking';
-import { AIChat } from './pages/AIChat';
-import { CheckIn } from './pages/CheckIn';
-import { Monitor } from './pages/Monitor';
-import { WebMonitor } from './pages/WebMonitor';
-import { Dashboard } from './pages/admin/Dashboard';
-import { Workbench } from './pages/admin/Workbench';
-import { Management } from './pages/admin/Management';
-import { Settings } from './pages/admin/Settings';
-import { Logs } from './pages/admin/Logs';
-import { Register } from './pages/Register';
-import { Login } from './pages/Login';
-import { PageRoute, Barber, Appointment, User } from './types';
-import { supabase } from './services/supabase';
+import { CustomerHome } from './pages/CustomerHome.tsx';
+import { Booking } from './pages/Booking.tsx';
+import { AIChat } from './pages/AIChat.tsx';
+import { CheckIn } from './pages/CheckIn.tsx';
+import { Monitor } from './pages/Monitor.tsx';
+import { WebMonitor } from './pages/WebMonitor.tsx';
+import { Dashboard } from './pages/admin/Dashboard.tsx';
+import { Workbench } from './pages/admin/Workbench.tsx';
+import { Management } from './pages/admin/Management.tsx';
+import { Settings } from './pages/admin/Settings.tsx';
+import { Logs } from './pages/admin/Logs.tsx';
+import { Register } from './pages/Register.tsx';
+import { Login } from './pages/Login.tsx';
+import { PageRoute, Barber, Appointment, User } from './types.ts';
+import { supabase } from './services/supabase.ts';
 
 const App: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<PageRoute>('launcher');
@@ -33,7 +33,6 @@ const App: React.FC = () => {
   }, []);
 
   const handleNavigate = (route: PageRoute) => {
-    // 退出功能实现：当返回启动页时，重置所有状态
     if (route === 'launcher') {
       setCurrentUser(null);
       setSelectedBarber(null);

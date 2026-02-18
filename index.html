@@ -10,6 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
     <script>
+        // 防止 process.env 访问报错
+        window.process = { env: {} };
+        
         tailwind.config = {
             darkMode: "class",
             theme: {
@@ -153,5 +156,7 @@
 </head>
 <body>
     <div id="root"></div>
+    <!-- 显式导入入口模块 -->
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
