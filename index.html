@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -26,6 +27,36 @@
                         "sans": ["Noto Sans SC", "Inter", "sans-serif"],
                         "display": ["Inter", "sans-serif"]
                     },
+                    animation: {
+                        'neon-flicker': 'neon-flicker 2s infinite alternate',
+                        'barber-scroll': 'barber-scroll 2s linear infinite',
+                        'rainbow-neon': 'rainbow-neon 5s linear infinite',
+                    },
+                    keyframes: {
+                        'neon-flicker': {
+                            '0%, 19%, 21%, 23%, 25%, 54%, 56%, 100%': {
+                                opacity: '1',
+                                textShadow: '0 0 4px #fff, 0 0 11px #fff, 0 0 19px #fff, 0 0 40px #007AFF, 0 0 80px #007AFF, 0 0 90px #007AFF, 0 0 100px #007AFF, 0 0 150px #007AFF'
+                            },
+                            '20%, 24%, 55%': {
+                                opacity: '0.7',
+                                textShadow: 'none'
+                            }
+                        },
+                        'barber-scroll': {
+                            'from': { backgroundPosition: '0 0' },
+                            'to': { backgroundPosition: '56px 0' }
+                        },
+                        'rainbow-neon': {
+                            '0%': { color: '#ff0000', textShadow: '0 0 10px #ff0000, 0 0 20px #ff0000' },
+                            '16%': { color: '#ff7f00', textShadow: '0 0 10px #ff7f00, 0 0 20px #ff7f00' },
+                            '33%': { color: '#ffff00', textShadow: '0 0 10px #ffff00, 0 0 20px #ffff00' },
+                            '50%': { color: '#00ff00', textShadow: '0 0 10px #00ff00, 0 0 20px #00ff00' },
+                            '66%': { color: '#0000ff', textShadow: '0 0 10px #0000ff, 0 0 20px #0000ff' },
+                            '83%': { color: '#8b00ff', textShadow: '0 0 10px #8b00ff, 0 0 20px #8b00ff' },
+                            '100%': { color: '#ff0000', textShadow: '0 0 10px #ff0000, 0 0 20px #ff0000' }
+                        }
+                    }
                 },
             },
         }
@@ -52,6 +83,59 @@
         }
         .material-symbols-outlined.fill-1 {
             font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        
+        /* Barber Pole Stripe Background (Classic Red, White, Blue) */
+        .barber-pole-bg {
+            background: repeating-linear-gradient(
+                45deg,
+                #ff0000, /* Red */
+                #ff0000 15px,
+                #ffffff 15px, /* White */
+                #ffffff 30px,
+                #0000ff 30px, /* Blue */
+                #0000ff 45px,
+                #ffffff 45px, /* White */
+                #ffffff 60px
+            );
+            background-size: 85px 85px;
+        }
+
+        /* Scrolling Barber Pole Border Wrapper */
+        .barber-border-wrapper {
+            position: relative;
+            padding: 3px; /* Border thickness */
+            border-radius: 1.5rem; /* 24px - matching rounded-3xl approx */
+            background: repeating-linear-gradient(
+                -45deg,
+                #ff0000, #ff0000 10px,
+                #ffffff 10px, #ffffff 20px,
+                #0000ff 20px, #0000ff 30px,
+                #ffffff 30px, #ffffff 40px
+            );
+            background-size: 56px 56px;
+            animation: barber-scroll 2s linear infinite;
+        }
+
+        /* Scrolling Rainbow Neon Text */
+        .neon-rainbow-text {
+            background: linear-gradient(
+                to right, 
+                #ff0000, #ff7f00, #ffff00, #00ff00, #00ffff, #0000ff, #8b00ff, #ff0000
+            );
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-size: 200% auto;
+            animation: rainbow-scroll 3s linear infinite;
+        }
+
+        @keyframes rainbow-scroll {
+            to { background-position: -200% center; }
+        }
+
+        .neon-glow-card-dark {
+            background: rgba(15, 23, 42, 0.95); /* Deep slate-950/900 background */
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
         }
     </style>
 <script type="importmap">

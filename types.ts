@@ -10,6 +10,7 @@ export interface User {
   phone?: string;
   realName?: string;
   email?: string;
+  vouchers?: number; // New: Number of haircut vouchers
 }
 
 export interface Barber {
@@ -25,6 +26,7 @@ export interface Barber {
   experience?: number; // Years of experience
   service_count?: number; // Total services performed (calculated)
   bio?: string; // Introduction
+  voucher_revenue?: number; // New: Cumulative haircut voucher revenue
 }
 
 export interface ServiceItem {
@@ -45,6 +47,7 @@ export interface Appointment {
   price: number;
   status: 'pending' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled';
   created_at?: string;
+  used_voucher?: boolean; // New: Whether a voucher was consumed for this service
 }
 
 export interface Rating {

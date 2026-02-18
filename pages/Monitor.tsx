@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '../components/Layout';
 import { BottomNav } from '../components/BottomNav';
@@ -23,7 +24,8 @@ export const Monitor: React.FC<Props> = ({ onNavigate }) => {
   
   // Notification State
   const [notification, setNotification] = useState<NotificationState>({ show: false, message: '', type: 'info' });
-  const notificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Fix: Use ReturnType<typeof setTimeout> for browser compatibility instead of NodeJS.Timeout
+  const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Function to get "Today" string matching the format stored in DB: "M月D日"
   const getTodayString = () => {
