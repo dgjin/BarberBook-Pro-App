@@ -2,20 +2,20 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Barber, Appointment, PageRoute } from '../types';
-import { generateSpeech } from '../services/geminiService';
+import { generateXfyunSpeech } from '../services/xfyunService';
 
 interface Props {
   onNavigate: (route: PageRoute) => void;
 }
 
-// 核心解码器：处理原始 PCM 16bit 24kHz 单声道数据
+// 核心解码器：处理原始 PCM 16bit 数据
+// 讯飞默认输出 16000Hz
 async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
-  sampleRate: number = 24000,
+  sampleRate: number = 16000,
   numChannels: number = 1,
 ): Promise<AudioBuffer> {
-  // 必须确保缓冲区是 2 字节对齐的，使用 slice 确保内存对齐
   const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
   const dataInt16 = new Int16Array(buffer);
   
@@ -25,7 +25,6 @@ async function decodeAudioData(
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // 归一化 PCM 数据到 [-1, 1] 范围
       channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
     }
   }
@@ -76,14 +75,12 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
       } catch (e) { console.error("WebMonitor Fetch Error", e); }
   };
 
-  // 必须由用户点击触发，确保 AudioContext 处于 running 状态
   const initAudioContext = async () => {
       if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
-          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+          audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       }
       if (audioContextRef.current.state === 'suspended') {
           await audioContextRef.current.resume();
-          console.log("AudioContext 状态已恢复:", audioContextRef.current.state);
       }
   };
 
@@ -91,17 +88,8 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
       if (!audioEnabled) {
           try {
             await initAudioContext();
-            // 播放一个极短的静音片段来彻底解锁浏览器音频锁
-            const osc = audioContextRef.current!.createOscillator();
-            const gain = audioContextRef.current!.createGain();
-            gain.gain.value = 0;
-            osc.connect(gain);
-            gain.connect(audioContextRef.current!.destination);
-            osc.start(0);
-            osc.stop(0.1);
-
             setAudioEnabled(true);
-            addLog("语音播报系统已就绪");
+            addLog("科大讯飞语音引擎已就绪");
           } catch (e) {
             console.error("音频系统启动失败", e);
             addLog("音频权限请求失败");
@@ -109,22 +97,20 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
       } else {
           setAudioEnabled(false);
           window.speechSynthesis.cancel();
-          addLog("语音系统已手动关闭");
+          addLog("语音系统已关闭");
       }
   };
 
   const playAnnouncement = async (text: string) => {
       if (!audioEnabled) return;
       
-      console.log("正在准备播报:", text);
       setIsPlaying(true);
       try {
           await initAudioContext();
           if (audioContextRef.current && audioContextRef.current.state === 'running') {
-            const pcmData = await generateSpeech(text);
+            const pcmData = await generateXfyunSpeech(text);
             if (pcmData) {
-                console.log("收到 PCM 数据流");
-                const audioBuffer = await decodeAudioData(pcmData, audioContextRef.current, 24000);
+                const audioBuffer = await decodeAudioData(pcmData, audioContextRef.current, 16000);
                 const source = audioContextRef.current.createBufferSource();
                 source.buffer = audioBuffer;
                 source.connect(audioContextRef.current.destination);
@@ -134,15 +120,13 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
             }
           }
       } catch (e) {
-          console.warn("Gemini TTS 失败，尝试回退到浏览器原生 TTS", e);
+          console.warn("科大讯飞 TTS 失败，尝试回退到浏览器原生 TTS", e);
       }
       
-      // 回退到 Web Speech API
       if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.lang = 'zh-CN';
-          utterance.rate = 1.0;
           utterance.onend = () => setIsPlaying(false);
           window.speechSynthesis.speak(utterance);
       } else { setIsPlaying(false); }
@@ -151,9 +135,8 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
   useEffect(() => {
     fetchMonitorData();
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    const polling = setInterval(fetchMonitorData, 10000); // 10s 轮询作为备份
+    const polling = setInterval(fetchMonitorData, 10000);
     
-    // 实时监听签到动态
     const sub = () => {
         if (channelRef.current) return;
         channelRef.current = supabase.channel('web_monitor_realtime')
@@ -161,7 +144,6 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
                 fetchMonitorData();
                 const newRec = payload.new as Appointment;
                 const oldRec = payload.old as Appointment;
-                // 当状态变为 checked_in 时触发语音播报
                 if (newRec.status === 'checked_in' && oldRec.status !== 'checked_in') {
                     addLog(`[叫号] ${newRec.customer_name} 已签到`);
                     playAnnouncement(`请 ${newRec.id % 1000} 号顾客 ${newRec.customer_name}，到 ${newRec.barber_name} 处准备理发。`);
@@ -198,7 +180,9 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
                 </div>
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight text-white">BarberBook Pro <span className="text-primary">Monitor</span></h1>
-                    <p className="text-xs text-slate-400 font-mono tracking-widest uppercase">实时服务叫号系统</p>
+                    <p className="text-xs text-slate-400 font-mono tracking-widest uppercase">
+                        {audioEnabled ? '科大讯飞语音引擎已开启' : '实时服务叫号系统'}
+                    </p>
                 </div>
             </div>
             
@@ -216,9 +200,9 @@ export const WebMonitor: React.FC<Props> = ({ onNavigate }) => {
                             <span className="w-1 h-3 bg-primary animate-pulse delay-150"></span>
                         </div>
                     ) : (
-                        <span className="material-symbols-outlined text-lg">{audioEnabled ? 'volume_up' : 'volume_off'}</span>
+                        <span className="material-symbols-outlined text-lg">{audioEnabled ? 'record_voice_over' : 'voice_over_off'}</span>
                     )}
-                    <span className="text-sm font-bold">{audioEnabled ? '语音播报已激活' : '点击开启语音叫号'}</span>
+                    <span className="text-sm font-bold">{audioEnabled ? '讯飞播报中' : '点击开启讯飞叫号'}</span>
                 </button>
 
                 <div className="text-right">

@@ -38,7 +38,6 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
     if (activeTab === 'barber') {
         const { data: barberData } = await supabase.from('app_barbers').select('*').order('id');
         
-        // 核心取数逻辑：通过聚合已完成且用券的预约单，计算最真实的理发师收入
         const { data: apptStats } = await supabase
             .from('app_appointments')
             .select('barber_name, used_voucher')
@@ -55,7 +54,6 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
         if (barberData) {
             const enrichedBarbers = barberData.map((b: any) => ({
                 ...b,
-                // 该字段完全由统计逻辑覆盖，不可编辑
                 voucher_revenue: voucherCounts[b.name] ?? 0
             }));
             setStaffList(enrichedBarbers as Barber[]);
@@ -95,12 +93,11 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
     setActiveModal('edit_barber');
   };
 
-  // 同步收入：重新执行聚合逻辑并刷新显示
   const handleSyncVoucherRevenue = async () => {
     if (!selectedStaff) return;
     setIsSyncing(true);
     try {
-        await fetchData(); // 重新加载全局数据
+        await fetchData(); 
         const freshBarber = staffList.find(s => s.id === selectedStaff.id);
         if (freshBarber) {
             setBarberFormData(prev => ({ ...prev, voucher_revenue: freshBarber.voucher_revenue }));
@@ -139,7 +136,7 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
   const handleQrClick = (staff: Barber) => { setSelectedStaff(staff); setActiveModal('qr'); }
 
   const handleAddBarber = () => {
-    const newStaff: Barber = { id: 0, name: '', title: '', status: 'active', specialties: [], rating: 5.0, experience: 1, service_count: 0, bio: '', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBjkSmPnTjla4o-VeIij_US-0pBrVEtz_P87_uFjoUkyUkjRJSBnVDmLeBiQa_biqdTOlVRx6c8emTaYmeaBRiTE6iVSdyxsYmrZb_mNBbtJKjxNNSfPtD4KKb4ZNDO8Q7cZRJeqBcef3nXFZL9_zFnZBxw0_EXhnb64poyQDzM1iDUbZymkDsJGiYK4qxwsprBAUNLUg46KeZqcT9qRsycBys9FzSMp8S2jmFfytSkXUDVsI86Wa2q711auKVMMbe06b7yWxsomxQ', voucher_revenue: 0 };
+    const newStaff: Barber = { id: 0, name: '', title: '', status: 'active', specialties: [], rating: 5.0, experience: 1, service_count: 0, bio: '', image: '', voucher_revenue: 0 };
     setSelectedStaff(newStaff);
     setBarberFormData(newStaff);
     setActiveModal('edit_barber');
@@ -152,10 +149,20 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
     }
   };
 
+  const handleBarberAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setBarberFormData(prev => ({ ...prev, image: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSaveBarber = async () => {
     if (!selectedStaff || !barberFormData.name) return;
     setIsSaving(true);
-    // 强制过滤掉收入字段，确保前端无法篡改统计数据
     const payload = { 
         name: barberFormData.name, 
         title: barberFormData.title, 
@@ -179,6 +186,17 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
       setSelectedCustomer(customer);
       setCustomerFormData({ ...customer });
       setActiveModal('edit_customer');
+  };
+
+  const handleCustomerAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCustomerFormData(prev => ({ ...prev, avatar: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleDeleteCustomer = async (id: string | number) => {
@@ -244,120 +262,131 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
     setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + offset, 1));
   };
 
+  const getPlaceholderAvatar = (name: string) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'B')}&background=random&color=fff&size=128`;
+
   return (
-    <Layout className="bg-bg-main relative">
-      <header className="sticky top-0 z-30 bg-white/80 ios-blur px-5 pt-14 pb-4 border-b border-gray-100">
+    <Layout className="bg-[#F8FAFC] relative">
+      <header className="sticky top-0 z-30 bg-white/80 ios-blur px-6 pt-14 pb-4 border-b border-slate-100">
         <div className="flex justify-between items-center">
           <div>
-            <p className="text-[11px] font-bold text-primary uppercase tracking-[0.05em] mb-0.5">BarberBook Pro</p>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">综合管理</h1>
+            <p className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-0.5">Management Pro</p>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">人员与权益管理</h1>
           </div>
           {activeTab === 'barber' && (
-            <button onClick={handleAddBarber} className="bg-primary hover:opacity-90 text-white w-9 h-9 rounded-full flex items-center justify-center shadow-sm active:scale-95 transition-all">
-                <span className="material-symbols-outlined text-[22px]">add</span>
+            <button onClick={handleAddBarber} className="bg-primary hover:opacity-90 text-white w-10 h-10 rounded-[14px] flex items-center justify-center shadow-lg shadow-blue-200 active:scale-95 transition-all">
+                <span className="material-symbols-outlined text-[24px]">add</span>
             </button>
           )}
         </div>
       </header>
       
-      <main className="px-4 py-4 pb-32 overflow-y-auto no-scrollbar">
-        <div className="sticky top-0 z-20 space-y-4 mb-6">
-            <div className="relative">
-                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[20px]">search</span>
-                <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border-none rounded-2xl py-3.5 pl-11 pr-4 text-[15px] shadow-sm focus:ring-2 focus:ring-primary/20 transition-all" placeholder={activeTab === 'barber' ? "搜索理发师..." : "搜索顾客姓名/手机号..."} type="text" />
+      <main className="px-5 py-6 pb-32 overflow-y-auto no-scrollbar">
+        <div className="sticky top-0 z-20 space-y-4 mb-8">
+            <div className="relative group">
+                <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-hover:text-primary transition-colors">search</span>
+                <input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border-none rounded-[20px] py-4 pl-12 pr-5 text-[15px] shadow-sm border border-transparent focus:ring-2 focus:ring-primary/10 transition-all" placeholder={activeTab === 'barber' ? "搜索理发师姓名或职级..." : "通过姓名或手机号检索客户..."} type="text" />
             </div>
-            <div className="bg-white p-1 rounded-xl flex shadow-sm border border-white">
-                <button onClick={() => { setActiveTab('barber'); setSearchQuery(''); }} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${activeTab === 'barber' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>理发师管理</button>
-                <button onClick={() => { setActiveTab('customer'); setSearchQuery(''); }} className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${activeTab === 'customer' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'}`}>顾客管理</button>
+            <div className="bg-slate-200/50 p-1 rounded-[16px] flex">
+                <button onClick={() => { setActiveTab('barber'); setSearchQuery(''); }} className={`flex-1 py-3 text-[13px] font-black rounded-[12px] transition-all duration-300 ${activeTab === 'barber' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>发型师团队</button>
+                <button onClick={() => { setActiveTab('customer'); setSearchQuery(''); }} className={`flex-1 py-3 text-[13px] font-black rounded-[12px] transition-all duration-300 ${activeTab === 'customer' ? 'bg-white text-slate-900 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>顾客档案库</button>
             </div>
         </div>
 
         {isLoading ? (
-            <div className="text-center py-20 text-slate-400">正在获取最新数据...</div>
+            <div className="text-center py-24 flex flex-col items-center gap-3">
+                <div className="w-10 h-10 border-4 border-slate-100 border-t-primary rounded-full animate-spin"></div>
+                <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">Synchronizing Data...</p>
+            </div>
         ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
                 {activeTab === 'barber' ? (
                     filteredStaff.length > 0 ? (
                         filteredStaff.map((staff) => (
-                            <div key={staff.id} className="bg-white rounded-[24px] p-5 shadow-sm border border-white relative group animate-fade-in">
-                                <button onClick={(e) => { e.stopPropagation(); handleDeleteBarber(staff.id); }} className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors z-10 w-8 h-8 flex items-center justify-center rounded-full hover:bg-red-50">
-                                    <span className="material-symbols-outlined text-[20px]">delete</span>
+                            <div key={staff.id} className="bg-white rounded-[28px] p-6 shadow-sm border border-white relative group animate-fade-in hover:shadow-xl hover:shadow-blue-100/30 transition-all duration-500">
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteBarber(staff.id); }} className="absolute top-5 right-5 text-slate-200 hover:text-red-500 transition-colors z-10 w-9 h-9 flex items-center justify-center rounded-full hover:bg-red-50">
+                                    <span className="material-symbols-outlined text-[20px]">delete_sweep</span>
                                 </button>
-                                <div className="flex items-start gap-4 mb-5">
+                                <div className="flex items-start gap-5 mb-6">
                                     <div className="relative shrink-0">
-                                        <img className="w-16 h-16 rounded-2xl object-cover ring-4 ring-slate-50 shadow-sm" src={staff.image} alt={staff.name}/>
-                                        <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-[3px] border-white shadow-sm ${staff.status === 'active' ? 'bg-status-ready' : staff.status === 'busy' ? 'bg-amber-400' : 'bg-slate-400'}`}></span>
+                                        <div className="w-[72px] h-[72px] rounded-[24px] overflow-hidden ring-4 ring-slate-50 shadow-sm">
+                                            <img className="w-full h-full object-cover" src={staff.image || getPlaceholderAvatar(staff.name)} alt={staff.name}/>
+                                        </div>
+                                        <span className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-[4px] border-white shadow-sm ${staff.status === 'active' ? 'bg-status-ready' : staff.status === 'busy' ? 'bg-amber-400' : 'bg-slate-400'}`}></span>
                                     </div>
                                     <div className="flex-1 min-w-0 pr-8">
-                                        <div className="flex items-center justify-between">
-                                            <h3 className="text-[17px] font-bold text-slate-900 truncate">{staff.name}</h3>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${staff.status === 'active' ? 'text-status-ready bg-green-50' : staff.status === 'busy' ? 'text-amber-500 bg-amber-50' : 'text-slate-500 bg-slate-100'}`}>
-                                            {staff.status === 'active' ? '在职' : staff.status === 'busy' ? '忙碌' : '休息'}
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-[17px] font-black text-slate-900 truncate tracking-tight">{staff.name}</h3>
+                                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${staff.status === 'active' ? 'text-green-600 bg-green-50' : staff.status === 'busy' ? 'text-amber-600 bg-amber-50' : 'text-slate-400 bg-slate-100'}`}>
+                                                {staff.status === 'active' ? 'Ready' : staff.status === 'busy' ? 'Busy' : 'Off'}
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <p className="text-[13px] text-slate-500">{staff.title}</p>
-                                        </div>
-                                        <div className="mt-3 flex flex-wrap gap-2">
-                                            <div className="text-[10px] px-2 py-1 bg-primary/5 text-primary font-black rounded-lg border border-primary/10 flex items-center gap-1.5">
-                                                <span className="material-symbols-outlined text-[14px]">confirmation_number</span>
-                                                累计理发券: {staff.voucher_revenue || 0} 张
-                                            </div>
+                                        <p className="text-[12px] text-slate-400 font-bold uppercase tracking-widest mt-1">{staff.title}</p>
+                                        <div className="mt-4 inline-flex items-center gap-2 py-1.5 px-3 bg-blue-50/50 rounded-xl border border-blue-100/50">
+                                            <span className="material-symbols-outlined text-primary text-[16px]">confirmation_number</span>
+                                            <span className="text-[11px] font-black text-primary uppercase">收益: {staff.voucher_revenue || 0} Vouchers</span>
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-50">
-                                    <button onClick={() => handleEditBarberClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-1 text-slate-600 active:bg-slate-50 rounded-xl transition-colors hover:bg-slate-50 hover:text-primary">
-                                        <span className="material-symbols-outlined text-[20px]">edit_square</span>
-                                        <span className="text-[11px] font-bold">基本资料</span>
+                                <div className="flex items-center justify-between gap-3 pt-5 border-t border-slate-50">
+                                    <button onClick={() => handleEditBarberClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-[18px] transition-all hover:bg-slate-900 hover:text-white">
+                                        <span className="material-symbols-outlined text-[22px]">edit_square</span>
+                                        <span className="text-[10px] font-black uppercase tracking-tighter">基本资料</span>
                                     </button>
-                                    <button onClick={() => handleScheduleClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-1 text-slate-600 active:bg-slate-50 rounded-xl transition-colors hover:bg-slate-50 hover:text-primary">
-                                        <span className="material-symbols-outlined text-[20px]">calendar_month</span>
-                                        <span className="text-[11px] font-bold">周排班</span>
+                                    <button onClick={() => handleScheduleClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-2.5 bg-slate-50 text-slate-600 rounded-[18px] transition-all hover:bg-slate-900 hover:text-white">
+                                        <span className="material-symbols-outlined text-[22px]">event_repeat</span>
+                                        <span className="text-[10px] font-black uppercase tracking-tighter">排班计划</span>
                                     </button>
-                                    <button onClick={() => handleQrClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-1 text-primary active:bg-primary/5 rounded-xl transition-colors">
-                                        <span className="material-symbols-outlined text-[20px]">qr_code_2</span>
-                                        <span className="text-[11px] font-bold">预约码</span>
+                                    <button onClick={() => handleQrClick(staff)} className="flex-1 flex flex-col items-center gap-1.5 py-2.5 bg-blue-50 text-primary rounded-[18px] transition-all hover:bg-primary hover:text-white">
+                                        <span className="material-symbols-outlined text-[22px]">qr_code_2</span>
+                                        <span className="text-[10px] font-black uppercase tracking-tighter">专属预约码</span>
                                     </button>
                                 </div>
                             </div>
                         ))
                     ) : (
-                        <div className="text-center py-20 text-slate-400">未找到符合条件的理发师</div>
+                        <div className="text-center py-24 text-slate-300 font-black uppercase tracking-widest text-[10px]">No stylist found</div>
                     )
                 ) : (
                     filteredCustomers.length > 0 ? (
                         filteredCustomers.map((user) => (
-                            <div key={user.id} className="bg-white rounded-[24px] p-5 shadow-sm border border-white flex flex-col gap-4 animate-fade-in">
-                                <div className="flex items-center gap-4">
-                                    <img src={user.avatar || 'https://via.placeholder.com/150'} alt={user.name} className="w-14 h-14 rounded-full object-cover bg-slate-100 shadow-sm" />
+                            <div key={user.id} className="bg-white rounded-[28px] p-5 shadow-sm border border-white flex flex-col gap-4 animate-fade-in hover:shadow-lg transition-all duration-300">
+                                <div className="flex items-center gap-5">
+                                    <div className="w-[60px] h-[60px] rounded-full overflow-hidden border-2 border-slate-50 shadow-sm bg-slate-100 flex-shrink-0">
+                                        <img src={user.avatar || getPlaceholderAvatar(user.name)} alt={user.name} className="w-full h-full object-cover" />
+                                    </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <h3 className="text-[16px] font-bold text-slate-900 truncate">{user.name}</h3>
-                                            <span className="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold rounded-md border border-primary/10">
-                                                {user.vouchers} 张可用
-                                            </span>
+                                            <h3 className="text-[16px] font-black text-slate-900 truncate">{user.name}</h3>
+                                            <div className="px-2 py-0.5 bg-blue-50 text-primary text-[9px] font-black rounded-md border border-blue-100 uppercase tracking-tighter">
+                                                {user.vouchers} Vouchers
+                                            </div>
                                         </div>
                                         <div className="flex flex-col gap-0.5">
-                                            <div className="flex items-center gap-1 text-[12px] text-slate-500">
-                                                <span className="material-symbols-outlined text-[14px]">phone_iphone</span>
-                                                <span className="font-mono font-medium">{user.phone}</span>
+                                            <div className="flex items-center gap-1.5 text-[12px] text-slate-500">
+                                                <span className="material-symbols-outlined text-[16px] text-slate-300">phone_iphone</span>
+                                                <span className="font-mono font-bold tracking-tight">{user.phone}</span>
                                             </div>
+                                            {user.realName && (
+                                                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold uppercase tracking-tight">
+                                                    <span className="material-symbols-outlined text-[14px]">id_card</span>
+                                                    <span>Verified: {user.realName}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex flex-col gap-2">
-                                        <button onClick={() => handleEditCustomerClick(user)} className="w-8 h-8 rounded-full bg-slate-50 text-slate-600 flex items-center justify-center hover:bg-primary hover:text-white transition-colors">
-                                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                                        <button onClick={() => handleEditCustomerClick(user)} className="w-10 h-10 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center hover:bg-slate-900 hover:text-white transition-all shadow-sm">
+                                            <span className="material-symbols-outlined text-[20px]">edit_note</span>
                                         </button>
-                                        <button onClick={() => handleDeleteCustomer(user.id)} className="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors">
-                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                        <button onClick={() => handleDeleteCustomer(user.id)} className="w-10 h-10 rounded-full bg-red-50 text-red-300 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all shadow-sm">
+                                            <span className="material-symbols-outlined text-[20px]">person_remove</span>
                                         </button>
                                     </div>
                                 </div>
                             </div>
                         ))
                     ) : (
-                        <div className="text-center py-20 text-slate-400">未找到符合条件的顾客</div>
+                        <div className="text-center py-24 text-slate-300 font-black uppercase tracking-widest text-[10px]">No customer found</div>
                     )
                 )}
             </div>
@@ -366,101 +395,122 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
 
       {activeModal !== 'none' && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center pointer-events-none">
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm pointer-events-auto transition-opacity" onClick={() => { setActiveModal('none'); setSelectedStaff(null); setSelectedCustomer(null); }}></div>
-          <div className="bg-white w-full max-w-sm m-4 rounded-[32px] p-6 shadow-2xl pointer-events-auto transform transition-all animate-[slide-up_0.3s_ease-out] max-h-[90vh] overflow-y-auto no-scrollbar border border-white/20">
-             <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-slate-900">
-                    {activeModal === 'edit_barber' ? '基本资料' : 
-                     activeModal === 'edit_customer' ? '客户权益管理' : 
-                     activeModal === 'schedule' ? '排班日历' : '专属二维码'}
-                </h2>
-                <button onClick={() => { setActiveModal('none'); setSelectedStaff(null); setSelectedCustomer(null); }} className="p-2 bg-slate-100 rounded-full text-slate-500 active:bg-slate-200 transition-colors">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-md pointer-events-auto transition-opacity" onClick={() => { setActiveModal('none'); setSelectedStaff(null); setSelectedCustomer(null); }}></div>
+          <div className="bg-white w-full max-w-sm m-4 rounded-[36px] p-8 shadow-2xl pointer-events-auto transform transition-all animate-[slide-up_0.35s_cubic-bezier(0.16,1,0.3,1)] max-h-[90vh] overflow-y-auto no-scrollbar border border-white/20">
+             <div className="flex items-center justify-between mb-8">
+                <div>
+                    <h2 className="text-2xl font-black text-slate-900 tracking-tight">
+                        {activeModal === 'edit_barber' ? '资料维护' : 
+                         activeModal === 'edit_customer' ? '权益配置' : 
+                         activeModal === 'schedule' ? '排班日历' : '身份凭证'}
+                    </h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Management Console</p>
+                </div>
+                <button onClick={() => { setActiveModal('none'); setSelectedStaff(null); setSelectedCustomer(null); }} className="w-10 h-10 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
                     <span className="material-symbols-outlined text-xl">close</span>
                 </button>
              </div>
 
              {activeModal === 'edit_barber' && selectedStaff && (
-                <div className="space-y-6">
-                    {/* 收益纯展示卡片：去掉了 input，改为只读 Stat Card */}
-                    <div className="p-5 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl relative overflow-hidden shadow-xl">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 text-white"><span className="material-symbols-outlined text-8xl">wallet</span></div>
+                <div className="space-y-8">
+                    <div className="p-6 bg-slate-900 rounded-[28px] relative overflow-hidden shadow-2xl">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 text-white"><span className="material-symbols-outlined text-9xl">wallet</span></div>
                         <div className="relative z-10">
-                            <div className="flex justify-between items-start mb-4">
+                            <div className="flex justify-between items-start mb-6">
                                 <div>
-                                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-1">理发券累计总收入</p>
-                                    <p className="text-[9px] text-slate-400 font-medium italic">Data from Appointment History</p>
+                                    <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-1">年度理发券核销额度</p>
+                                    <p className="text-[9px] text-slate-500 font-medium italic">Verified Transactions Only</p>
                                 </div>
                                 <button 
                                     onClick={handleSyncVoucherRevenue}
                                     disabled={isSyncing}
-                                    className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-all active:scale-90"
+                                    className="w-10 h-10 rounded-[14px] bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-all active:scale-90"
                                     title="实时对账"
                                 >
-                                    <span className={`material-symbols-outlined text-[18px] ${isSyncing ? 'animate-spin' : ''}`}>sync</span>
+                                    <span className={`material-symbols-outlined text-[20px] ${isSyncing ? 'animate-spin' : ''}`}>sync</span>
                                 </button>
                             </div>
                             <div className="flex items-baseline gap-2">
-                                <span className="text-5xl font-mono font-black text-white tracking-tighter">
+                                <span className="text-5xl font-mono font-black text-white tracking-tighter shadow-sm">
                                     {barberFormData.voucher_revenue || 0}
                                 </span>
-                                <span className="text-sm font-bold text-blue-300 uppercase opacity-60">Vouchers</span>
-                            </div>
-                            <div className="mt-5 flex items-center gap-2 py-2 px-3 bg-white/5 rounded-xl border border-white/5 backdrop-blur-sm">
-                                <span className="material-symbols-outlined text-blue-400 text-sm">verified</span>
-                                <p className="text-[9px] text-slate-300 font-bold leading-tight">
-                                    统计项受系统财务保护，无法手动修改。
-                                </p>
+                                <span className="text-sm font-black text-blue-300 uppercase opacity-60">Total</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">显示名称</label>
+                    <div className="flex flex-col items-center">
+                        <div className="relative">
+                            <div className="w-[100px] h-[100px] rounded-[32px] overflow-hidden border-4 border-slate-50 shadow-xl bg-slate-100 flex items-center justify-center">
+                                {barberFormData.image ? (
+                                    <img src={barberFormData.image} alt="Barber Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="material-symbols-outlined text-4xl text-slate-300">person</span>
+                                )}
+                            </div>
+                            <label 
+                                htmlFor="barber-avatar-upload-mgmt" 
+                                className="absolute -bottom-2 -right-2 w-10 h-10 bg-primary text-white rounded-2xl flex items-center justify-center cursor-pointer shadow-lg border-4 border-white active:scale-90 transition-transform"
+                            >
+                                <span className="material-symbols-outlined text-xl">photo_camera</span>
+                            </label>
+                            <input 
+                                id="barber-avatar-upload-mgmt" 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={handleBarberAvatarFileChange}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="space-y-5">
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">显示名称</label>
                             <input 
                                 value={barberFormData.name} 
                                 onChange={e => setBarberFormData({...barberFormData, name: e.target.value})} 
-                                className="w-full bg-slate-50 border-none rounded-2xl py-3.5 px-5 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20 placeholder:font-normal" 
+                                className="w-full bg-slate-50 border-none rounded-[18px] py-4 px-5 text-slate-900 font-black focus:ring-2 focus:ring-primary/10 transition-all" 
                                 placeholder="请输入姓名" 
                             />
                         </div>
-                        <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">专业职级</label>
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">专业职级</label>
                             <input 
                                 value={barberFormData.title} 
                                 onChange={e => setBarberFormData({...barberFormData, title: e.target.value})} 
-                                className="w-full bg-slate-50 border-none rounded-2xl py-3.5 px-5 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20 placeholder:font-normal" 
+                                className="w-full bg-slate-50 border-none rounded-[18px] py-4 px-5 text-slate-900 font-bold focus:ring-2 focus:ring-primary/10 transition-all" 
                                 placeholder="如：美式渐变首席师" 
                             />
                         </div>
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">当前状态</label>
-                            <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-3 px-1">当前状态</label>
+                            <div className="flex gap-2.5 p-1.5 bg-slate-100 rounded-[20px]">
                                 {(['active', 'busy', 'rest'] as const).map(status => (
                                     <button 
                                         key={status}
                                         onClick={() => setBarberFormData({...barberFormData, status})}
-                                        className={`flex-1 py-2.5 rounded-xl text-[11px] font-black transition-all ${barberFormData.status === status ? 'bg-white text-slate-900 shadow-md scale-[1.02]' : 'text-slate-400 hover:text-slate-600'}`}
+                                        className={`flex-1 py-3 rounded-[14px] text-[11px] font-black uppercase tracking-tighter transition-all duration-300 ${barberFormData.status === status ? 'bg-white text-slate-900 shadow-md scale-[1.05]' : 'text-slate-400 hover:text-slate-600'}`}
                                     >
-                                        {status === 'active' ? '在职' : status === 'busy' ? '忙碌' : '休假'}
+                                        {status === 'active' ? '在线' : status === 'busy' ? '忙碌' : '休憩'}
                                     </button>
                                 ))}
                             </div>
                         </div>
                     </div>
                     
-                    <div className="pt-2">
+                    <div className="pt-4">
                         <button 
                             onClick={handleSaveBarber} 
                             disabled={!barberFormData.name || isSaving} 
-                            className={`w-full text-white font-bold py-4 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${(!barberFormData.name || isSaving) ? 'bg-slate-300' : 'bg-slate-900 shadow-slate-200'}`}
+                            className="w-full bg-primary text-white font-black py-4.5 rounded-[22px] shadow-2xl shadow-blue-100 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
                         >
                             {isSaving ? (
                                 <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
                             ) : (
                                 <>
-                                    <span className="material-symbols-outlined text-xl">check_circle</span>
-                                    <span>保存资料更新</span>
+                                    <span className="material-symbols-outlined text-xl">verified</span>
+                                    <span className="text-sm tracking-wide">立即保存更改</span>
                                 </>
                             )}
                         </button>
@@ -469,70 +519,108 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
              )}
 
              {activeModal === 'edit_customer' && selectedCustomer && (
-                 <div className="space-y-6">
-                     <div className="bg-blue-50 p-5 rounded-3xl border border-blue-100">
-                        <label className="text-[10px] font-black text-primary uppercase tracking-[0.2em] block mb-3 text-center">理发券手动充值 / 扣减</label>
-                        <div className="flex items-center gap-4">
-                            <button onClick={() => setCustomerFormData({...customerFormData, vouchers: Math.max(0, (customerFormData.vouchers || 0) - 1)})} className="w-12 h-12 rounded-2xl bg-white text-slate-500 font-bold text-xl shadow-sm border border-blue-100 active:scale-90 transition-all">-</button>
-                            <div className="flex-1 bg-white border-2 border-blue-200 rounded-2xl py-3 px-4 text-center">
+                 <div className="space-y-8">
+                     <div className="bg-blue-50/50 p-6 rounded-[28px] border border-blue-100 shadow-inner">
+                        <label className="text-[10px] font-black text-primary uppercase tracking-[0.25em] block mb-5 text-center">理发券余额调剂中心</label>
+                        <div className="flex items-center gap-5">
+                            <button onClick={() => setCustomerFormData({...customerFormData, vouchers: Math.max(0, (customerFormData.vouchers || 0) - 1)})} className="w-14 h-14 rounded-[18px] bg-white text-slate-400 font-black text-2xl shadow-sm border border-blue-100 active:scale-90 transition-all">-</button>
+                            <div className="flex-1 bg-white border-2 border-blue-100 rounded-[22px] py-4 text-center shadow-sm">
                                 <input 
                                     type="number"
                                     value={customerFormData.vouchers} 
                                     onChange={e => setCustomerFormData({...customerFormData, vouchers: parseInt(e.target.value) || 0})}
-                                    className="w-full bg-transparent border-none p-0 text-2xl font-mono font-black text-slate-900 text-center focus:ring-0"
+                                    className="w-full bg-transparent border-none p-0 text-3xl font-mono font-black text-slate-900 text-center focus:ring-0"
                                 />
-                                <p className="text-[9px] text-blue-300 font-bold uppercase mt-1">Vouchers Balance</p>
+                                <p className="text-[9px] text-blue-300 font-black uppercase mt-1">Wallet Balance</p>
                             </div>
-                            <button onClick={() => setCustomerFormData({...customerFormData, vouchers: (customerFormData.vouchers || 0) + 1})} className="w-12 h-12 rounded-2xl bg-white text-slate-500 font-bold text-xl shadow-sm border border-blue-100 active:scale-90 transition-all">+</button>
+                            <button onClick={() => setCustomerFormData({...customerFormData, vouchers: (customerFormData.vouchers || 0) + 1})} className="w-14 h-14 rounded-[18px] bg-white text-slate-400 font-black text-2xl shadow-sm border border-blue-100 active:scale-90 transition-all">+</button>
                         </div>
                      </div>
-                     <div className="space-y-4">
-                        <div>
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1.5 px-1">客户昵称</label>
-                            <input value={customerFormData.name} onChange={e => setCustomerFormData({...customerFormData, name: e.target.value})} className="w-full bg-slate-50 border-none rounded-2xl py-3.5 px-5 text-slate-900 font-bold focus:ring-2 focus:ring-primary/20" />
+
+                     <div className="flex flex-col items-center">
+                        <div className="relative">
+                            <div className="w-[90px] h-[90px] rounded-full overflow-hidden border-4 border-slate-50 shadow-xl bg-slate-100 flex items-center justify-center">
+                                {customerFormData.avatar ? (
+                                    <img src={customerFormData.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="material-symbols-outlined text-4xl text-slate-300">person</span>
+                                )}
+                            </div>
+                            <label 
+                                htmlFor="admin-customer-avatar-upload" 
+                                className="absolute -bottom-1 -right-1 w-9 h-9 bg-slate-900 text-white rounded-2xl flex items-center justify-center cursor-pointer shadow-lg border-4 border-white active:scale-90 transition-transform"
+                            >
+                                <span className="material-symbols-outlined text-lg">photo_camera</span>
+                            </label>
+                            <input 
+                                id="admin-customer-avatar-upload" 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden" 
+                                onChange={handleCustomerAvatarFileChange}
+                            />
                         </div>
-                        <button onClick={handleSaveCustomer} disabled={isSaving} className="w-full mt-2 bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2">
-                            {isSaving ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : "更新客户信息"}
+                     </div>
+
+                     <div className="space-y-5">
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">客户昵称</label>
+                            <input value={customerFormData.name} onChange={e => setCustomerFormData({...customerFormData, name: e.target.value})} className="w-full bg-slate-50 border-none rounded-[18px] py-4 px-5 text-slate-900 font-black focus:ring-2 focus:ring-primary/10 transition-all" />
+                        </div>
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">真实姓名</label>
+                            <input value={customerFormData.realName} onChange={e => setCustomerFormData({...customerFormData, realName: e.target.value})} className="w-full bg-slate-50 border-none rounded-[18px] py-4 px-5 text-slate-900 font-bold focus:ring-2 focus:ring-primary/10 transition-all" placeholder="身份验证姓名" />
+                        </div>
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">联系电话</label>
+                            <input value={customerFormData.phone} onChange={e => setCustomerFormData({...customerFormData, phone: e.target.value})} className="w-full bg-slate-50 border-none rounded-[18px] py-4 px-5 text-slate-900 font-mono font-bold focus:ring-2 focus:ring-primary/10 transition-all" />
+                        </div>
+                        <div className="group">
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block mb-2 px-1">头像图片链接 (可选)</label>
+                            <input value={customerFormData.avatar} onChange={e => setCustomerFormData({...customerFormData, avatar: e.target.value})} className="w-full bg-slate-50 border-none rounded-[18px] py-3 px-5 text-slate-900 font-medium focus:ring-2 focus:ring-primary/10 text-xs" placeholder="URL Link" />
+                        </div>
+                        <button onClick={handleSaveCustomer} disabled={isSaving} className="w-full mt-4 bg-slate-900 text-white font-black py-4.5 rounded-[22px] shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                            {isSaving ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : "全量更新客户档案"}
                         </button>
                      </div>
                  </div>
              )}
 
              {activeModal === 'schedule' && selectedStaff && (
-                <div className="space-y-6">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
-                        <img src={selectedStaff.image} className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm" alt={selectedStaff.name}/>
+                <div className="space-y-8">
+                    <div className="p-5 bg-slate-50 rounded-[24px] border border-slate-100 flex items-center gap-5 shadow-sm">
+                        <img src={selectedStaff.image || getPlaceholderAvatar(selectedStaff.name)} className="w-[52px] h-[52px] rounded-[18px] object-cover border-2 border-white shadow-md" alt={selectedStaff.name}/>
                         <div>
-                            <p className="text-base font-bold text-slate-900">{selectedStaff.name}</p>
-                            <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest">Work Schedule</p>
+                            <p className="text-base font-black text-slate-900 tracking-tight">{selectedStaff.name}</p>
+                            <p className="text-[10px] text-slate-400 uppercase font-black tracking-widest mt-0.5">Stylist Schedule</p>
                         </div>
                     </div>
                     
-                    <div className="bg-slate-50/50 p-5 rounded-[28px] border border-slate-100">
-                        <div className="flex items-center justify-between mb-5">
-                            <button onClick={() => changeMonth(-1)} className="w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-lg">chevron_left</span></button>
-                            <h4 className="text-sm font-black text-slate-800 tracking-tight">{viewDate.getFullYear()}年 {viewDate.getMonth() + 1}月</h4>
-                            <button onClick={() => { setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)); }} className="w-9 h-9 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-400 hover:text-primary transition-colors"><span className="material-symbols-outlined text-lg">chevron_right</span></button>
+                    <div className="bg-slate-50/50 p-6 rounded-[32px] border border-slate-100 shadow-inner">
+                        <div className="flex items-center justify-between mb-6">
+                            <button onClick={() => changeMonth(-1)} className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-300 hover:text-primary transition-all active:scale-90"><span className="material-symbols-outlined text-lg font-black">chevron_left</span></button>
+                            <h4 className="text-[15px] font-black text-slate-800 tracking-tight uppercase">{viewDate.getFullYear()} / {viewDate.getMonth() + 1}</h4>
+                            <button onClick={() => { setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)); }} className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm text-slate-300 hover:text-primary transition-all active:scale-90"><span className="material-symbols-outlined text-lg font-black">chevron_right</span></button>
                         </div>
                         
-                        <div className="grid grid-cols-7 gap-1 text-center mb-3">
-                            {['一','二','三','四','五','六','日'].map(d => <span key={d} className="text-[10px] font-black text-slate-400 opacity-60 uppercase">{d}</span>)}
+                        <div className="grid grid-cols-7 gap-2 text-center mb-4">
+                            {['一','二','三','四','五','六','日'].map(d => <span key={d} className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{d}</span>)}
                         </div>
                         
-                        <div className="grid grid-cols-7 gap-2">
+                        <div className="grid grid-cols-7 gap-2.5">
                             {calendarData.map((d, i) => {
                                 const isWorking = scheduleDays.includes(d.weekDay);
                                 return (
                                     <button 
                                         key={i} 
                                         onClick={() => toggleScheduleDay(d.weekDay)}
-                                        className={`aspect-square rounded-xl flex items-center justify-center text-xs font-bold transition-all relative overflow-hidden
-                                            ${!d.currentMonth ? 'opacity-20 pointer-events-none' : ''}
-                                            ${isWorking ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105 z-10' : 'bg-white text-slate-400 border border-slate-100 hover:border-primary/30'}
+                                        className={`aspect-square rounded-[14px] flex items-center justify-center text-xs font-black transition-all relative overflow-hidden
+                                            ${!d.currentMonth ? 'opacity-10 pointer-events-none' : ''}
+                                            ${isWorking ? 'bg-primary text-white shadow-xl shadow-blue-200 scale-105 z-10' : 'bg-white text-slate-400 border border-slate-100 hover:border-primary/20'}
                                         `}
                                     >
                                         {d.day}
-                                        {isWorking && d.currentMonth && <div className="absolute top-1 right-1 w-1 h-1 bg-white rounded-full"></div>}
+                                        {isWorking && d.currentMonth && <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                                     </button>
                                 );
                             })}
@@ -542,24 +630,26 @@ export const Management: React.FC<Props> = ({ onNavigate }) => {
                     <button 
                         onClick={handleSaveSchedule} 
                         disabled={isSaving}
-                        className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-xl flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                        className="w-full bg-slate-900 text-white font-black py-4.5 rounded-[22px] shadow-2xl shadow-slate-200 flex items-center justify-center gap-3 active:scale-95 transition-all"
                     >
-                        {isSaving ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <span>保存周排班方案</span>}
+                        {isSaving ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <span className="text-sm tracking-wide">发布排班至全局终端</span>}
                     </button>
                 </div>
              )}
 
              {activeModal === 'qr' && selectedStaff && (
                  <div className="flex flex-col items-center">
-                    <div className="p-5 bg-white rounded-[40px] border border-slate-100 shadow-inner mb-6 relative group">
-                        <div className="absolute inset-0 bg-primary/5 rounded-[40px] opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=barber:${selectedStaff.id}`} className="w-56 h-56 mix-blend-multiply opacity-90 relative z-10" alt="QR Code"/>
+                    <div className="p-7 bg-white rounded-[48px] border border-slate-50 shadow-2xl shadow-blue-100/50 mb-10 relative group overflow-hidden">
+                        <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-[0.02] transition-opacity"></div>
+                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=barber:${selectedStaff.id}`} className="w-60 h-60 mix-blend-multiply opacity-90 relative z-10 scale-[1.02]" alt="QR Code"/>
                     </div>
-                    <p className="text-lg font-bold text-slate-900 mb-1">{selectedStaff.name} 的专属名片</p>
-                    <p className="text-xs text-slate-400 mb-8 text-center leading-relaxed px-6 font-medium">
-                        客户扫码后将自动识别理发师，直接进入预约流程。建议打印张贴在工位。
-                    </p>
-                    <button onClick={() => { setActiveModal('none'); }} className="w-full bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-colors">返回列表</button>
+                    <div className="text-center mb-10">
+                        <p className="text-xl font-black text-slate-900 tracking-tight">{selectedStaff.name} 专属席位预约码</p>
+                        <p className="text-[10px] text-slate-400 mt-2 font-black uppercase tracking-[0.2em] px-8 leading-relaxed">
+                            建议打印并张贴在工位醒目位置，客户扫码将自动定位该理发师。
+                        </p>
+                    </div>
+                    <button onClick={() => { setActiveModal('none'); }} className="w-full bg-slate-50 text-slate-400 font-black py-4 rounded-[18px] hover:bg-slate-100 hover:text-slate-600 transition-all text-[11px] uppercase tracking-widest">返回列表</button>
                  </div>
              )}
           </div>
